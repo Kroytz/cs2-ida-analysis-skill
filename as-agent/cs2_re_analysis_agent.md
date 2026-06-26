@@ -201,7 +201,14 @@ A ConVar appears in code as a global pair and a value accessor, not as a named s
 
 - Static registration object `unk_XXXX` (the ConVar's registrar).
 - Adjacent instance pointer `qword_XXXX+8` (live ConVar instance).
-- Value accessor with the shape `sub_A(&unk_XXXX, slot_or_-1); if (!v) v = *(T**)(qword_YYYY + 8);` — returns a pointer to the value storage (typically instance + 0x58 / +88). `slot == -1`/`0` selects the default split-screen slot; replicated cvars (`*(instance+0x30) & 0x8000`) index by slot.
+- Value accessor with the shape `sub_A(&unk_XXXX, slot_or_-1); if (!v) v = *(T**)(qword_YYYY + 8);` — returns a pointer to the value storage (typically instance + 0x58). `slot == -1`/`0` selects the default split-screen slot; replicated cvars (`*(instance+0x30) & 0x8000`) index by slot.
+
+Backend placeholder forms differ:
+
+- In IDA, the registrar commonly appears as `unk_XXXX`, the live pointer as `qword_YYYY` or `qword_YYYY+8`, and the name string as `a<CvarName>`.
+- In Ghidra, the same objects may appear as `DAT_...`, `PTR_...`, `qword_...`, `undefined8`, generic `FUN_...` registration thunks, or `s_<name>...` string symbols.
+- Treat these names as backend-generated placeholders, not evidence by themselves.
+- In Ghidra, identify the registrar and live pointer by xrefs, adjacency, call shape, and string-literal arguments rather than by expecting IDA-style `unk_` names.
 
 Recover the ConVar name from the registration thunk, not the use site:
 
@@ -209,11 +216,11 @@ Recover the ConVar name from the registration thunk, not the use site:
 2. In that thunk the 2nd argument is the name string — in IDA this shows as `lea rdx, a<CvarName>`; in Ghidra as a string literal parameter.
 3. The 3rd argument is the FCVAR flags bitmask; decode it, do not eyeball the base.
 
-Rename the globals to the cvar name (e.g. `unk_XXXX` → `cv_<cvarname>`, `qword_YYYY` → `g_pConVar_<cvarname>`) and comment the accessor call site with `// ConVar <name> (flags 0x...) gates ...`. Prefer this over guessing from the `unk_` address.
+Rename the registrar and live-pointer globals to the cvar name (e.g. `unk_XXXX` or `DAT_...` → `cv_<cvarname>`, `qword_YYYY` or `PTR_...` → `g_pConVar_<cvarname>`) and comment the accessor call site with `// ConVar <name> (flags 0x...) gates ...`. Prefer this over guessing from the placeholder address.
 
 ### Schema / networked-field StateChanged thunks
 
-Source 2 emits one StateChanged thunk per networked field. Recognize the shape: a small function that (1) computes `this` from a field address via `v3 = a1 - <OFFSET>`, (2) allocates a 1-element array, (3) writes `*elem = <OFFSET>` (the same immediate, in two places), (4) calls `vtable+0xE0 (224)` with the array. The call sites pass `(field_addr, -1, -1)` where `-1, -1` means whole-field change, non-array element.
+Source 2 emits one StateChanged thunk per networked field. Recognize the shape: a small function that (1) computes `this` from a field address via `v3 = a1 - <OFFSET>`, (2) allocates a 1-element array, (3) writes `*elem = <OFFSET>` (the same immediate, in two places), (4) calls `vtable+0xE0` with the array. The call sites pass `(field_addr, -1, -1)` where `-1, -1` means whole-field change, non-array element.
 
 Recover the field offset from the thunk body — do not guess from the call site:
 

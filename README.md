@@ -1,13 +1,13 @@
-# CS2 IDA Analysis Skill
+# CS2 Static Analysis Skill
 
-A reverse-engineering skill for analyzing Counter-Strike 2 / Source 2 native binaries in IDA Pro.
+A reverse-engineering skill for analyzing Counter-Strike 2 / Source 2 native binaries in disassembler.
 
-This skill is designed for IDA-assisted analysis of CS2 modules, and related native binaries.
+This skill is designed for disassembler-assisted analysis of CS2 modules, and related native binaries.
 
 It supports two main workflows:
 
 * **Crash analysis**: recover a specific crash path and identify the most likely root cause.
-* **Static annotation**: improve an IDA database with evidence-backed function names, variable names, comments, and type information.
+* **Static annotation**: improve a database with evidence-backed function names, variable names, comments, and type information.
 
 ## Important Requirement
 
