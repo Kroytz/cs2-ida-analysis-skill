@@ -1,0 +1,5 @@
+interface:
+  display_name: "CS2 IDA Analysis"
+  short_description: "CS2 crash analysis and IDA annotation"
+  default_prompt: "Use $cs2-ida-analysis to analyze or annotate a CS2 / Source 2 binary in IDA with optional schema and Source reference paths."
+
