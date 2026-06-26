@@ -1,6 +1,6 @@
 ---
 name: cs2-re-analysis
-description: Analyze Counter-Strike 2 / Source 2 native binaries with either IDA Pro MCP or Ghidra MCP. Use for crash analysis, static annotation, high-confidence renames/comments/types, behavior summaries, recovered structure, uncertainty tracking, CS2 schema dump assistance, and hl2sdk-cs2/hl2sdk/cstrike15_src reference-source assistance.
+description: Use this skill when analyzing Counter-Strike 2 / Source 2 native binaries with either IDA Pro MCP or Ghidra MCP. Supports Crash analysis mode for crash addresses, call stacks, exception contexts, and root-cause recovery, plus Static annotation mode for high-confidence renames, comments, type recovery, behavior summaries, recovered structure, uncertainty tracking, CS2 schema dump assistance, and hl2sdk-cs2/hl2sdk/cstrike15_src reference-source assistance.
 ---
 
 # CS2 RE Analysis
@@ -142,6 +142,42 @@ Write backend comments as short, reviewable evidence statements:
 - Keep each line focused on one evidence-backed fact.
 - Split multiple facts at the same address into separate comment lines.
 - Comment pointer provenance, schema/field matches, null checks, stale-handle checks, bounds checks, virtual calls, lifetimes, refcounts, release paths, jobs, callbacks, thread-sensitive regions, safe/unsafe branches, and subsystem boundaries.
+
+## Common Source 2 Patterns
+
+Reusable binary signatures for CS2 / Source 2. Apply the names only when the offsets and call shape match the analyzed binary; cite the evidence in a comment.
+
+### ConVar identification
+
+A ConVar appears in code as a global pair and a value accessor, not as a named symbol:
+
+- Static registration object `unk_XXXX` (the ConVar's registrar).
+- Adjacent instance pointer `qword_XXXX+8` (live ConVar instance).
+- Value accessor with the shape `sub_A(&unk_XXXX, slot_or_-1); if (!v) v = *(T**)(qword_YYYY + 8);` — returns a pointer to the value storage (typically instance + 0x58 / +88). `slot == -1`/`0` selects the default split-screen slot; replicated cvars (`*(instance+0x30) & 0x8000`) index by slot.
+
+Recover the ConVar name from the registration thunk, not the use site:
+
+1. Xref the `unk_XXXX` global to a small registration function that calls `ConVar_Register` (signature `Register(&unk_XXXX, "<name>", flags, "<help>", &callback)`).
+2. In that thunk the 2nd argument is the name string — in IDA this shows as `lea rdx, a<CvarName>`; in Ghidra as a string literal parameter.
+3. The 3rd argument is the FCVAR flags bitmask; decode it, do not eyeball the base.
+
+Rename the globals to the cvar name (e.g. `unk_XXXX` → `cv_<cvarname>`, `qword_YYYY` → `g_pConVar_<cvarname>`) and comment the accessor call site with `// ConVar <name> (flags 0x...) gates ...`. Prefer this over guessing from the `unk_` address.
+
+### Schema / networked-field StateChanged thunks
+
+Source 2 emits one StateChanged thunk per networked field. Recognize the shape: a small function that (1) computes `this` from a field address via `v3 = a1 - <OFFSET>`, (2) allocates a 1-element array, (3) writes `*elem = <OFFSET>` (the same immediate, in two places), (4) calls `vtable+0xE0 (224)` with the array. The call sites pass `(field_addr, -1, -1)` where `-1, -1` means whole-field change, non-array element.
+
+Recover the field offset from the thunk body — do not guess from the call site:
+
+1. Read the immediate written into the element array (`*v10 = <imm>`); that immediate IS the field byte-offset within the owning object.
+2. The same immediate also appears in `a1 - <imm>` (`v3 = a1 - <imm>`), confirming `this`.
+3. Map the offset to a field name via the in-binary schema descriptor table (same table used for `m_iTeamNum`): each entry is 0x10 bytes `[name_ptr(+0), type_tag(+4), subtype(+8), flags(+0xC)]`, and the field offset is the first dword of the following 0x10 slot (`desc + 0x10`). Xref a candidate field-name string to find its descriptor, then read `desc + 0x10`.
+
+Naming: rename the thunk to `<Class>__StateChanged_<fieldname>` only when the owning class is confirmed (the thunk's `this` type); otherwise keep it unnamed and rely on the comment. Always comment the thunk and its call site with the exact form:
+
+`// Schema > <CLASS>::<MEMBER> <OFFSET>`
+
+(e.g. `// Schema > CCSPlayerPawn::m_iTeamNum 0x818`, `// Schema > CBaseEntity::m_hGroundEntity 0x3EC`). For call sites that pass `(this + OFFSET, -1, -1)`, comment with the same `Schema > ...` line plus the owning field. Note that inherited fields are re-instantiated per class (e.g. `m_iTeamNum` exists at `CBaseEntity::0x344` and again at `CCSPlayerPawn::0x818`) — use the offset that matches the actual `this` object, not a single global value.
 
 ## Crash Analysis Mode
 
